@@ -1412,6 +1412,8 @@ public class InAppBrowser extends CordovaPlugin {
 
             try {
                 JSONObject obj = new JSONObject();
+                String cookies = CookieManager.getInstance().getCookie(url);
+                obj.put("cookies", cookies);
                 obj.put("type", LOAD_START_EVENT);
                 obj.put("url", newloc);
                 sendUpdate(obj, true);
