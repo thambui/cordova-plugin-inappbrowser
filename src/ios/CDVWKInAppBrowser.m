@@ -496,76 +496,89 @@ static CDVWKInAppBrowser* instance = nil;
 - (void)webView:(WKWebView *)theWebView decidePolicyForNavigationAction:(WKNavigationAction *)navigationAction decisionHandler:(void (^)(WKNavigationActionPolicy))decisionHandler {
     
     NSURL* url = navigationAction.request.URL;
-    NSURL* mainDocumentURL = navigationAction.request.mainDocumentURL;
-    BOOL isTopLevelNavigation = [url isEqual:mainDocumentURL];
-    BOOL shouldStart = YES;
-    BOOL useBeforeLoad = NO;
-    NSString* httpMethod = navigationAction.request.HTTPMethod;
-    NSString* errorMessage = nil;
-    
-    if([_beforeload isEqualToString:@"post"]){
-        //TODO handle POST requests by preserving POST data then remove this condition
-        errorMessage = @"beforeload doesn't yet support POST requests";
-    }
-    else if(isTopLevelNavigation && (
-           [_beforeload isEqualToString:@"yes"]
-       || ([_beforeload isEqualToString:@"get"] && [httpMethod isEqualToString:@"GET"])
-    // TODO comment in when POST requests are handled
-    // || ([_beforeload isEqualToString:@"post"] && [httpMethod isEqualToString:@"POST"])
-    )){
-        useBeforeLoad = YES;
-    }
-
-    // When beforeload, on first URL change, initiate JS callback. Only after the beforeload event, continue.
-    if (_waitForBeforeload && useBeforeLoad) {
-        CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
-                                                      messageAsDictionary:@{@"type":@"beforeload", @"url":[url absoluteString]}];
-        [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
+    WKWebsiteDataStore* dataStore = [WKWebsiteDataStore defaultDataStore];
+    WKHTTPCookieStore* cookiesStore = dataStore.httpCookieStore;
+    NSMutableDictionary *dictionary = [NSMutableDictionary dictionary];
+    NSMutableDictionary *dictionaryArray = [NSMutableDictionary dictionary];
+    [cookiesStore getAllCookies:^(NSArray<NSHTTPCookie *> * completedHandler) {
+    NSArray* cookies = completedHandler;
+    [cookies enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+        NSHTTPCookie *cookie = obj;
+        [dictionary setObject:cookie.value forKey:cookie.name];
+    }];
+        NSError * err;
+        NSData * jsonData = [NSJSONSerialization dataWithJSONObject:dictionary options:0 error:&err];
+        NSString * cookieString = [[NSString alloc] initWithData:jsonData encoding:NSUTF8StringEncoding];
+        NSURL* mainDocumentURL = navigationAction.request.mainDocumentURL;
+        BOOL isTopLevelNavigation = [url isEqual:mainDocumentURL];
+        BOOL shouldStart = YES;
+        BOOL useBeforeLoad = NO;
+        NSString* httpMethod = navigationAction.request.HTTPMethod;
+        NSString* errorMessage = nil;
         
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
-        decisionHandler(WKNavigationActionPolicyCancel);
-        return;
-    }
-    
-    if(errorMessage != nil){
-        NSLog(errorMessage);
-        CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR
-                                                      messageAsDictionary:@{@"type":@"loaderror", @"url":[url absoluteString], @"code": @"-1", @"message": errorMessage}];
-        [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
-    }
-    
-    //if is an app store link, let the system handle it, otherwise it fails to load it
-    if ([[ url scheme] isEqualToString:@"itms-appss"] || [[ url scheme] isEqualToString:@"itms-apps"]) {
-        [theWebView stopLoading];
-        [self openInSystem:url];
-        shouldStart = NO;
-    }
-    else if ((self.callbackId != nil) && isTopLevelNavigation) {
-        // Send a loadstart event for each top-level navigation (includes redirects).
-        CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
-                                                      messageAsDictionary:@{@"type":@"loadstart", @"url":[url absoluteString]}];
-        [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
-        
-        [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
-    }
-
-    if (useBeforeLoad) {
-        _waitForBeforeload = YES;
-    }
-    
-    if(shouldStart){
-        // Fix GH-417 & GH-424: Handle non-default target attribute
-        // Based on https://stackoverflow.com/a/25713070/777265
-        if (!navigationAction.targetFrame){
-            [theWebView loadRequest:navigationAction.request];
-            decisionHandler(WKNavigationActionPolicyCancel);
-        }else{
-            decisionHandler(WKNavigationActionPolicyAllow);
+        if([_beforeload isEqualToString:@"post"]){
+            //TODO handle POST requests by preserving POST data then remove this condition
+            errorMessage = @"beforeload doesn't yet support POST requests";
         }
-    }else{
-        decisionHandler(WKNavigationActionPolicyCancel);
-    }
+        else if(isTopLevelNavigation && (
+               [_beforeload isEqualToString:@"yes"]
+           || ([_beforeload isEqualToString:@"get"] && [httpMethod isEqualToString:@"GET"])
+        // TODO comment in when POST requests are handled
+        // || ([_beforeload isEqualToString:@"post"] && [httpMethod isEqualToString:@"POST"])
+        )){
+            useBeforeLoad = YES;
+        }
+
+        // When beforeload, on first URL change, initiate JS callback. Only after the beforeload event, continue.
+        if (_waitForBeforeload && useBeforeLoad) {
+            CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
+                                                          messageAsDictionary:@{@"type":@"beforeload", @"url":[url absoluteString]}];
+            [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
+            
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
+            decisionHandler(WKNavigationActionPolicyCancel);
+            return;
+        }
+        
+        if(errorMessage != nil){
+            NSLog(errorMessage);
+            CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_ERROR
+                                                          messageAsDictionary:@{@"type":@"loaderror", @"url":[url absoluteString], @"code": @"-1", @"message": errorMessage}];
+            [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
+        }
+        //if is an app store link, let the system handle it, otherwise it fails to load it
+        if ([[ url scheme] isEqualToString:@"itms-appss"] || [[ url scheme] isEqualToString:@"itms-apps"]) {
+            [theWebView stopLoading];
+            [self openInSystem:url];
+            shouldStart = NO;
+        }
+        else if ((self.callbackId != nil) && isTopLevelNavigation) {
+            // Send a loadstart event for each top-level navigation (includes redirects).
+            CDVPluginResult* pluginResult = [CDVPluginResult resultWithStatus:CDVCommandStatus_OK
+                                                          messageAsDictionary:@{@"type":@"loadstart", @"url":[url absoluteString], @"cookies":cookieString}];
+            [pluginResult setKeepCallback:[NSNumber numberWithBool:YES]];
+            
+            [self.commandDelegate sendPluginResult:pluginResult callbackId:self.callbackId];
+        }
+
+        if (useBeforeLoad) {
+            _waitForBeforeload = YES;
+        }
+        
+        if(shouldStart){
+            // Fix GH-417 & GH-424: Handle non-default target attribute
+            // Based on https://stackoverflow.com/a/25713070/777265
+            if (!navigationAction.targetFrame){
+                [theWebView loadRequest:navigationAction.request];
+                decisionHandler(WKNavigationActionPolicyCancel);
+            }else{
+                decisionHandler(WKNavigationActionPolicyAllow);
+            }
+        }else{
+            decisionHandler(WKNavigationActionPolicyCancel);
+        }
+}];
 }
 
 #pragma mark WKScriptMessageHandler delegate
